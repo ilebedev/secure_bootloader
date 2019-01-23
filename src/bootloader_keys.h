@@ -1,0 +1,3 @@
+typedef struct bootloader_keys_t {
+  ...
+} bootloader_keys_t;
