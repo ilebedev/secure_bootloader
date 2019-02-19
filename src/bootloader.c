@@ -41,12 +41,7 @@
   - randomart(uint8_t *input, size_t len, char *out_str)
 */
 
-extern uint8_t PK_D[32];
-// SK_D is kept on the stack, and later erased
-extern uint8_t SM_H[64];
-extern uint8_t PK_SM[32];
-extern uint8_t SK_SM[64];
-extern uint8_t SM_SIG[64];
+extern bootloader_state_t bootloader_state;
 
 extern const void* sm_ptr;
 extern const size_t sm_size;

@@ -1,33 +1,40 @@
-# NUM_CORES should be defined in gcc flag
+#include "config.h"
 
-#include "sanctum_config.h"
-#include "encoding.h"
-
-# Requires these symbols:
-# DRAM_BASE
-# DRAM_END
-# MEM_LOADER_BASE
-# MSIP_BASE
-# NUM_CORES
-# M_STACK_BYTES_PER_HART
-# BOOT_ADDR
+/* The following symbols must be defined:
+  DRAM_BASE
+  DRAM_SIZE
+  MSIP_BASE
+  BOOT_ADDR
+*/
 
 .section .text.entry
 
 .global reset_vector
 reset_vector:
-    la sp, m_stack_ptr # sp for hart 0 (to be adjusted for other harts)
-    csrr a0, mhartid # a0 <-- mhartid
+  # 1. Only the the hart designated to perform secure bootloading proceeds.
+  #    Other harts wait on an interrupt barrier.
+  call platform_get_bootloader_hart
+  csrr a1, mhartid
+  bne a1, a0, .wait_for_boot
 
-    # 2. All but hart 0 wait for a signal via IPI. Hart 0 proceeds, and will wake other harts.
-    bne a0, zero, .hart_non_zero # hart 0
+  # 2. Hart 0 sets a stack pointer; can now call C functions
+  la sp, stack_top
 
-    # 2. Erase DRAM (if applicable)
-#ifdef ERASE_DRAM
-    li t0, DRAM_BASE
-    li t1, DRAM_SIZE
-    add t1, t1, t0  # t1 <-- top of DRAM
-.dram_erase_loop:
+  # 3. Hart 0 sanitizes DRAM to destroy data from previous boot
+  call platform_clean_dram
+
+  # 4. Hart 0 loads a boot image into memory
+  call platform_load_boot_image
+
+  # 5. Hart 0 calls into the C secure bootloader routine to derive keys, etc.
+  #    The stack should contain all internal architectural state
+  call secure_bootloader
+
+  # 6. Erase private information on the stack
+  #    (TODO: make sure the PAGE_SIZE is a multiple of 64 bytes)
+  la t0, m_stack_base
+  la t1, m_stack_ptr
+  .stack_erase_loop:
     sd x0, -8(t1)
     sd x0, -16(t1)
     sd x0, -24(t1)
@@ -37,142 +44,63 @@ reset_vector:
     sd x0, -56(t1)
     sd x0, -64(t1)
     addi t1, t1, -64
-    blt t0, t1, .dram_erase_loop
-#endif
+    blt t0, t1, .stack_erase_loop
+  li sp, 0
 
-    # 3. Ask host to load ELF into DRAM
-    # request elf from host
-    li t0, MEM_LOADER_BASE
-    li t1, DRAM_BASE
-    sw t1, 0(t0)
-    fence # make sure the request goes out
-    # wait for host to finish
-.wait_on_elf:
-    ld t1, 8(t0)
-    bnez t1, .wait_on_elf
+  # 7. Scrub shared state
+  call platform_clean_shared_state
 
-    fence
-    fence.i
+  # 8. Wake other harts via inter-processor interrupts (IPI)
+  li t0, 1 # value to write to other harts' mip.msip
+  li t1, MSIP_BASE
+  li t2, ((NUM_HARTS - 1) * 4)
+  .wake_other_harts_loop:
+      beqz t2, .done_secure_boot
+      add t3, t1, t2
+      sw t0, 0(t3)
+      addi t2, t2, -4
+      j .wake_other_harts_loop
+      # --- (unreachable)
 
-    # 4. Perform bootloader tasks
-    call secure_bootloader
+  .done_secure_boot:
+  # 9. Clean core state
+  call platform_clean_core_state
 
-    # 5. Erase private information on the stack
-    la t0, m_stack_base
-    la t1, m_stack_ptr
-.m_stack_erase_loop:
-    sd x0, -8(t1)
-    sd x0, -16(t1)
-    sd x0, -24(t1)
-    sd x0, -32(t1)
-    sd x0, -40(t1)
-    sd x0, -48(t1)
-    sd x0, -56(t1)
-    sd x0, -64(t1)
-    addi t1, t1, -64
-    blt t0, t1, .m_stack_erase_loop
-
-    # 6. wake all harts via inter processor interrupts (IPI)
-    # t0: value to write to other harts' mip.msip
-    li t0, 1
-    li t1, MSIP_BASE
-    li t2, ((NUM_HARTS - 1) * 4)
-.wake_other_harts_loop:
-    beqz t2, .done_waking_other_harts
-    add t3, t1, t2
-    sw t0, 0(t3)
-    addi t2, t2, -4
-    j .wake_other_harts_loop
-    # ---
-
-.done_waking_other_harts:
-    # 6. clean private hart state
-    call clean_core
-
-    # 7. boot
-    la ra, sm_ptr
+  # 10. Transfer control to boot image
+    li ra, BOOT_ADDR
     jr ra
-    # ----
+    # ---- (unreachable)
 
-.hart_non_zero:
-    # Adjust stack pointer for this hart
-    li t0, M_STACK_SIZE
-    mul t0, t0, a0    # offset = mhartid * M_STACK_SIZE
-    sub sp, sp, t0    # sp -= offset
+  # Meanwhile, other harts wait on an IPI barrier
+  .wait_for_boot:
     # Enable IPI to wait on
     la t0, .wake_on_ipi
     csrw mtvec, t0
     csrsi mie, 8
     csrsi mstatus, 8
+
     # Wait for an IPI from core 0
-.wait_on_ipi:
-    wfi
-    j .wait_on_ipi
-    # ---
+    .wait_on_ipi:
+      wfi # may be implemented as a NOP. In this case, loop and busy-wait
+      j .wait_on_ipi
+      # --- (unreachable)
 
-.wake_on_ipi:
-    # This hart (not 0) wakes up after an IPI from hart 0
-    # clear my mip.msip
-    li t0, MSIP_BASE
-    csrr t1, mhartid
-    slli t1, t1, 2
-    add t0, t0, t1
-    sw x0, 0(t0)
-    fence
-    fence.i
-    # reset mtvec, mstatus, mie
-    csrw mtvec, x0
-    csrw mie, x0
-    csrw mstatus, x0
-    # clean the core
-    call clean_core
+    # Once the IPI arrives (secure bootloader has executed)
+    .wake_on_ipi:
+      # Clear my mip.msip to clear the pending interrupt
+      li t0, MSIP_BASE
+      csrr t1, mhartid
+      slli t1, t1, 2
+      add t0, t0, t1
+      sw x0, 0(t0)
+      fence
+      fence.i
 
-    # boot
-    la ra, sm_ptr
-    jr ra
-    # ---
+      # Reset mtvec, mstatus, mie to disable interrupts
+      csrw mtvec, zero
+      csrw mie, zero
+      csrw mstatus, zero
 
-# Helper functions
-
-clean_core:
-    # 1. Clean all harts state
-    # Register File
-    # TODO: some of these can be skipped, as they are initialized later
-    # x0 is ZERO
-    # x1 holds the return address
-    la x2, m_stack_ptr # sp for hart 0 (to be adjusted for other harts)
-    li x3, 0
-    li x4, 0
-    li x5, 0
-    li x6, 0
-    li x7, 0
-    li x8, 0
-    li x9, 0
-    csrr x10, mhartid # a0 <-- mhartid
-    la x11, dtb_ptr # a1 <-- &dtb
-    li x12, 0
-    li x13, 0
-    li x14, 0
-    li x15, 0
-    li x16, 0
-    li x17, 0
-    li x18, 0
-    li x19, 0
-    li x20, 0
-    li x21, 0
-    li x22, 0
-    li x23, 0
-    li x24, 0
-    li x25, 0
-    li x26, 0
-    li x27, 0
-    li x28, 0
-    li x29, 0
-    li x30, 0
-    li x31, 0
-    # FP Register File
-    # TODO: is this relevant for our prototype?
-    # CSRs
-    csrw mscratch, x0
-    # TODO: other CSRs to be sanitized?
-    jr x1 # return
+      # clean the core
+      j done_secure_boot
+      # --- (unreachable)
