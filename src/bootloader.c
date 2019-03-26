@@ -37,11 +37,11 @@
 
 #include "randomart.h"
 /*
-  privides:
+  provides:
   - randomart(uint8_t *input, size_t len, char *out_str)
 */
 
-extern bootloader_state_t bootloader_state;
+#include "boot_api.h"
 
 extern const void* sm_ptr;
 extern const size_t sm_size;
@@ -98,41 +98,41 @@ void __attribute__ ((section (".text.bootloader.entry"))) secure_bootloader() {
   }
 
   // Derive device keys PD_D, SK_D
-  ed25519_create_keypair(PK_D, SK_D, scratchpad);
+  ed25519_create_keypair(boot_api_state.device_public_key, SK_D, scratchpad);
 
   // Commit to PK_D by printing it to the host
   print_str("Committing to PK_D: (ed25519) ");
   for (int i=0; i<32; i++) {
-    print_hex_byte(PK_D[i]);
+    print_hex_byte(boot_api_state.device_public_key[i]);
   }
 
   char randomart_str[256];
-  randomart(PK_D, 32, randomart_str);
+  randomart(boot_api_state.device_public_key, 32, randomart_str);
   print_str("\n\n+--[ED25519 256]--+\n");
   print_str(randomart_str);
   print_str("\nTrusted manufacturer (host) should endorse this key in order to root the device's attestations.\n\n");
 
   // Measure the SM
-  sha3(&sm_ptr, sm_size, SM_H, 64);
+  sha3(&sm_ptr, boot_api_state.security_monitor_size, boot_api_state.security_monitor_hash, 64);
 
   // Derive SM keys from H(SK_D, H(SM))
   // scratchpad <-- H(SK_D H(SM))
 
   sha3_init(&hash_ctx, 32);
   sha3_update(&hash_ctx, SK_D, 64);
-  sha3_update(&hash_ctx, SM_H, 64);
+  sha3_update(&hash_ctx, boot_api_state.security_monitor_hash, 64);
   sha3_final(scratchpad, &hash_ctx);
   // derive keys from seed in scratchpad
-  ed25519_create_keypair(PK_SM, SK_SM, scratchpad);
+  ed25519_create_keypair(boot_api_state.security_monito_public_key, SK_SM, scratchpad);
 
   // Endorse the SM with PK_D
-  // scratchpad <-- H(H(SM), PK_SM)
+  // scratchpad <-- H(H(SM), boot_api_state.security_monito_public_key)
   sha3_init(&hash_ctx, 64);
-  sha3_update(&hash_ctx, SM_H, 64);
-  sha3_update(&hash_ctx, PK_SM, 32);
+  sha3_update(&hash_ctx, boot_api_state.security_monitor_hash, 64);
+  sha3_update(&hash_ctx, boot_api_state.security_monito_public_key, 32);
   sha3_final(scratchpad, &hash_ctx);
   // Sign scratchpad with SK_D
-  ed25519_sign(SM_SIG, scratchpad, 64, PK_D, SK_D);
+  ed25519_sign(boot_api_state.security_monitor_signature, scratchpad, 64, boot_api_state.device_public_key, SK_D);
 
   return; // NOTE: stack and hart state will be cleaned before boot
 }
