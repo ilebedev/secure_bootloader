@@ -88,6 +88,7 @@ void bootloader() {
 
   if ( !boot_image_header.device_public_key_present ) {
     compute_public_signing_key( &device_secret_signing_key, &(boot_image_header.device_public_key) );
+    boot_image_header.device_public_key_present = true;
   }
 
   // 4). Seed a KDF with H(device secret, measurement) to (re)compute the SW's signing key
@@ -96,6 +97,7 @@ void bootloader() {
   // If the measured software's public key is not marked as present, (re)derive it
   if ( !boot_image_header.software_public_key_present ) {
     compute_public_signing_key( &(boot_image_header.software_secret_key), &(boot_image_header.software_public_key) );
+    boot_image_header.software_public_key_present = true;
   }
 
   // 5). Endorse the measured software by signing H(PK_SW, measurement) with SK_D
