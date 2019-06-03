@@ -9,24 +9,20 @@ SECTIONS
 
   /* Boot ROM base */
   . = 0x1000;
-
   .rom : {
-    _start = .;
     *(.text.entry)
+    *(.text.platform)
+    *(.text.*)
     *(.text)
+    *(.rodata)
+    *(.got)
+    *(.got.*)
   }
 
   . = 0x80000000;
   .dram (NOLOAD): {
-    PROVIDE(m_stack_base = .);
     *(.data.stack)
-    PROVIDE(m_stack_top = .);
     *(.data.boot_image)
-    PROVIDE(post_boot_ptr = .);
-  }
-
-  . = 0x10000000;
-  .leftovers : {
-    *(.*)
+    PROVIDE(measured_binary = .);
   }
 }

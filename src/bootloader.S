@@ -1,4 +1,5 @@
 #include "config.h"
+#include "platform_config.h"
 
 .section .text.entry
 
@@ -19,7 +20,7 @@ reset_vector:
   call platform_load_boot_image
 
   # 4. Hart 0 sets a stack pointer; can now call C functions
-  la sp, m_stack_top
+  li sp, STACK_TOP
 
   # 5. Hart 0 calls into the C secure bootloader routine to derive keys, etc.
   #    The stack should contain all internal architectural state
@@ -27,8 +28,8 @@ reset_vector:
 
   # 6. Erase private information on the stack
   #    (TODO: make sure the PAGE_SIZE is a multiple of 64 bytes)
-  la a0, m_stack_base
-  la a1, m_stack_top
+  li a0, STACK_BASE
+  li a1, STACK_TOP
   call platform_clear_algined_memory
 
   # 7. Scrub shared state
@@ -55,6 +56,6 @@ boot_sw_image:
   call platform_clean_core_state
 
   # 11 Transfer control to boot image
-  la ra, post_boot_ptr
+  la ra, measured_binary
   jr ra
   # ---- (unreachable)

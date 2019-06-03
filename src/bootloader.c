@@ -42,7 +42,7 @@
   - void sign(void * in_data, size_t in_data_size, public_key_t * in_public_key, secret_key_t * in_secret_key, signature_t * out_signature)
 */
 
-void __attribute__ ((section (".text.bootloader.c"))) bootloader() {
+void bootloader() {
   // Prerequisite: platform:
   // - loads the untrusted software into memory
   // - initializes the architecture to a well-known, public, trusted state

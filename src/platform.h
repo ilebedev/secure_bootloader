@@ -5,15 +5,17 @@
 #include <config.h>
 #include <string.h>
 
+#include "platform_config.h"
+
 // Prerequisites
 _Static_assert ( ((RAM_BASE&0xFF) == 0), "Implementation of `platform_clear_memory_and_load_boot_image` assumes the DRAM_BASE is aligned to a  is aligned to a 512B boundary.");
 
 _Static_assert ( ((RAM_SIZE&0xFF) == 0), "Implementation of `platform_clear_memory_and_load_boot_image` assumes the DRAM_SIZE is a multiple of 512B.");
 
 // Basic platform primitives: stack, image loading
-typedef struct bootloader_stack_t { uint8_t x[4096]; } bootloader_stack_t;
+typedef struct bootloader_stack_t { uint8_t x[STACK_SIZE]; } bootloader_stack_t;
 volatile bootloader_stack_t stack __attribute__(( section(".data.stack"), aligned(4096) )) ;
-boot_image_header_t boot_image_header __attribute__(( section(".boot_image") )) ;
+boot_image_header_t boot_image_header __attribute__(( section(".data.boot_image") )) ;
 
 // Device secret
 typedef struct device_secret_t { uint8_t x[32]; } device_secret_t;

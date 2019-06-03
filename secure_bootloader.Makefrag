@@ -23,7 +23,7 @@ $(SECURE_BOOTLOADER): $(SECURE_BOOTLOADER_LDS) $(SECURE_BOOTLOADER_SRCS)
 	# create a build directory if one does not exist
 	mkdir -p $(BUILD_DIR)/secure_bootloader
 	# compile the secure bootloader ELF
-	cd $(BUILD_DIR)/secure_bootloader && $(CC) -T $(SECURE_BOOTLOADER_LDS) -I $(COMMON_DIR) -march=rv64g -mabi=lp64 -nostdlib -nostartfiles -fno-common -std=gnu11 -static -fPIC -g -O0 -Wall $(SECURE_BOOTLOADER_SRCS) -o $(BUILD_DIR)/secure_bootloader/secure_bootloader.elf
+	cd $(BUILD_DIR)/secure_bootloader && $(CC) -T $(SECURE_BOOTLOADER_LDS) -I $(COMMON_DIR) -march=rv64g -mabi=lp64 -nostdlib -nostartfiles -fno-common -std=gnu11 -static -fPIC -O0 -Wall $(SECURE_BOOTLOADER_SRCS) -o $(BUILD_DIR)/secure_bootloader/secure_bootloader.elf
 	# extract a binary image from the ELF
 	cd $(BUILD_DIR)/secure_bootloader && $(OBJCOPY) -O binary --only-section=rom  $(BUILD_DIR)/secure_bootloader/secure_bootloader.elf $(BUILD_DIR)/secure_bootloader/secure_bootloader.bin
 
