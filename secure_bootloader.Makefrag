@@ -1,0 +1,32 @@
+# Secure Bootloader targets
+# -------------------------
+SECURE_BOOTLOADER := $(BUILD_DIR)/secure_bootloader/secure_bootloader.bin
+
+SECURE_BOOTLOADER_DIR := $(SANCTUM_DIR)/secure_bootloader
+
+SECURE_BOOTLOADER_SRCS := \
+	$(SECURE_BOOTLOADER_DIR)/src/bootloader.c \
+	$(SECURE_BOOTLOADER_DIR)/src/bootloader.S \
+	$(SECURE_BOOTLOADER_DIR)/src/platform.S \
+	$(COMMON_DIR)/sha3/sha3.c \
+	$(COMMON_DIR)/ed25519/fe.c \
+	$(COMMON_DIR)/ed25519/ge.c \
+	$(COMMON_DIR)/ed25519/keypair.c \
+	$(COMMON_DIR)/ed25519/sc.c \
+	$(COMMON_DIR)/ed25519/sign.c \
+	$(COMMON_DIR)/ed25519/sha512.c \
+	$(COMMON_DIR)/clib/memcpy.c \
+
+SECURE_BOOTLOADER_LDS := $(SECURE_BOOTLOADER_DIR)/src/bootloader.lds
+
+$(SECURE_BOOTLOADER): $(SECURE_BOOTLOADER_LDS) $(SECURE_BOOTLOADER_SRCS)
+	# create a build directory if one does not exist
+	mkdir -p $(BUILD_DIR)/secure_bootloader
+	# compile the secure bootloader ELF
+	cd $(BUILD_DIR)/secure_bootloader && $(CC) -T $(SECURE_BOOTLOADER_LDS) -I $(COMMON_DIR) -march=rv64g -mabi=lp64 -nostdlib -nostartfiles -fno-common -std=gnu11 -static -fPIC -g -O0 -Wall $(SECURE_BOOTLOADER_SRCS) -o $(BUILD_DIR)/secure_bootloader/secure_bootloader.elf
+	# extract a binary image from the ELF
+	cd $(BUILD_DIR)/secure_bootloader && $(OBJCOPY) -O binary --only-section=rom  $(BUILD_DIR)/secure_bootloader/secure_bootloader.elf $(BUILD_DIR)/secure_bootloader/secure_bootloader.bin
+
+# Export target shorthand
+.PHONY: secure_bootloader
+secure_bootloader: $(SECURE_BOOTLOADER)

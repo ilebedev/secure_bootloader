@@ -1,4 +1,4 @@
-#include "config.h"
+#include <config.h>
 
 .section ".stack"
 .globl stack_base, stack_top
